@@ -1,51 +1,43 @@
 from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from models import db, User, Product, Order, init_db
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourdatabase.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
 CORS(app)
 
-# Sample data
-users = {
-    1: {"name": "John Doe"},
-    2: {"name": "Jane Smith"}
-}
-
-products = {
-    1: {"name": "Product 1", "price": 10, "inventory": 100},
-    2: {"name": "Product 2", "price": 20, "inventory": 50}
-}
-
-orders = []
+init_db(app)
 
 @app.route('/checkout', methods=['POST'])
 def checkout():
     data = request.get_json()
     user_id = data.get('user_id')
-    cart_items = data.get('cart_items')  
+    cart_items = data.get('cart_items')
 
-    if user_id not in users:
+    user = User.query.get(user_id)
+    if not user:
         return jsonify({"error": "Invalid user ID"}), 400
 
     total_amount = 0
     for product_id, quantity in cart_items.items():
-        if product_id not in products:
+        product = Product.query.get(product_id)
+        if not product:
             return jsonify({"error": f"Product {product_id} not found"}), 400
-        
-        product = products[product_id]
-        if product["inventory"] < quantity:
+
+        if product.inventory < quantity:
             return jsonify({"error": f"Insufficient inventory for product {product_id}"}), 400
 
-        total_amount += product["price"] * quantity
-        products[product_id]["inventory"] -= quantity  
+        total_amount += product.price * quantity
+        product.inventory -= quantity
 
-    order = {
-        "user_id": user_id,
-        "items": cart_items,
-        "total_amount": total_amount
-    }
-    orders.append(order)
+    order = Order(user_id=user_id, total_amount=total_amount, items=cart_items)
+    db.session.add(order)
+    db.session.commit()
 
-    return jsonify({"message": "Checkout successful", "order": order}), 200
+    return jsonify({"message": "Checkout successful", "order": order.to_dict()}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
